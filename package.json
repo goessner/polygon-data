@@ -1,0 +1,26 @@
+{
+	"name": "polygondata",
+	"displayName": "Polygon Data",
+	"description": "Efficient Handling of Polygon Data With The ES6 Proxy Object",
+	"version": "1.0",
+	"author": "Stefan Goessner",
+	"publisher": "goessner",
+	"keywords": [
+		"polygon",
+		"point array",
+		"ES6",
+		"iterator",
+		"generator",
+		"proxy",
+		"geometry"
+	],
+	"homepage": "https://github.com/goessner/polygon-data/blob/master/readme.md",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/goessner/polygon-data.git"
+	},
+	"bugs": {
+		"url": "https://github.com/goessner/polygon-data/issues"
+	},
+	"license": "MIT"
+}

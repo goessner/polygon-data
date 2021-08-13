@@ -1,0 +1,138 @@
+<html>
+<head>
+<title>Polygon Data Processing</title>
+<meta charset='utf-8'>
+</head>
+<body>
+<script>
+// Separate 
+const xcoords = [100,300,300,100];
+const ycoords = [100,100,300,300];
+
+let points;
+
+// Listing 2 as a function
+function test(approach, points) {
+    console.log(approach);
+    console.log('for(;;)');
+    for (let i=0; i<points.length; i++)  // traditional loop
+        console.log(points[i]);
+    console.log('for..of');
+    for (let p of points)                // for..of loop 
+        console.log(p);
+    console.log('spread operator');
+    console.log(...points);              // spread operator
+    console.log('JSON.stringify');
+    console.log(JSON.stringify(points));
+}
+
+// Listing 3
+function iterator(xarr, yarr) {
+    let index = 0;
+    return {
+        next() { 
+            return index < xarr.length 
+                ? { value: { x:xarr[index], y:yarr[index++] }, done: false }
+                : { done: !(index = 0) };  // reset state ...
+        },
+        [Symbol.iterator]() { return this; }
+    }
+}
+points = iterator(xcoords,ycoords);
+console.log('Iterator - Listing 3');
+console.log('for(;;)');
+for (let i=0; i<points.length; i++)  // traditional loop
+    console.log(points[i]);
+console.log('for..of');
+for (let p of points)                // for..of loop 
+    console.log(p);
+console.log('spread operator');
+console.log(...points);              // spread operator
+console.log('JSON.stringify');
+console.log(JSON.stringify(points));
+
+// Listing 4
+function* generator(xarr, yarr) {
+    for (let i=0; i<xarr.length; i++)
+        yield {x: xarr[i], y: yarr[i]};
+}
+points = generator(xcoords,ycoords); // no way to reset
+console.log('Generator - Listing 4');
+console.log('for(;;)');
+for (let i=0; i<points.length; i++)  // traditional loop
+    console.log(points[i]);
+console.log('for..of');
+for (let p of points)                // for..of loop 
+    console.log(p);
+points = generator(xcoords,ycoords); // no way to reset
+console.log('spread operator');
+console.log(...points);              // spread operator
+points = generator(xcoords,ycoords); // no way to reset
+console.log('JSON.stringify');
+console.log(JSON.stringify(points));
+
+// Listing 5
+const proxy = function(xarr, yarr) {
+    return new Proxy([], {
+        get: (points, key) => {
+            if (!isNaN(+key))
+                return {x:xarr[+key],y:yarr[+key]}
+            else
+                return xarr[key];
+        }
+    });
+}
+points = proxy(xcoords,ycoords);
+console.log('Proxy - Listing 5');
+console.log('for(;;)');
+for (let i=0; i<points.length; i++)  // traditional loop
+    console.log(points[i]);
+console.log('for..of ... TypeError');
+//for (let p of points)                // for..of loop TypeError !
+//    console.log(p);
+console.log('spread operator ... TypeError');
+//console.log(...points);              // spread operator
+console.log('JSON.stringify');
+console.log(JSON.stringify(points));
+
+// Listing 6
+const proxyEnhanced = function(xarr, yarr) {
+    const points = new Array(~~xarr.length);
+    points[Symbol.iterator] = function() {
+        let index = 0;
+        return {
+            next() { 
+                return index < xarr.length 
+                    ? { value: { x:xarr[index], y:yarr[index++] }, 
+                        done: false }
+                    : { done: true };
+            }
+        }
+    }
+    return new Proxy(points, {
+        get: (pts, key) => {
+            if (key === Symbol.iterator)
+                return points[Symbol.iterator].bind(points);
+            else if (!isNaN(+key))
+                return {x:xarr[key],y:yarr[key]};
+            else
+                return xarr[key];
+        }
+    });
+}
+points = proxyEnhanced(xcoords,ycoords);
+console.log('Proxy Enhanced - Listing 6');
+console.log('for(;;)');
+for (let i=0; i<points.length; i++)  // traditional loop
+    console.log(points[i]);
+console.log('for..of ');
+for (let p of points)                // for..of loop
+    console.log(p);
+console.log('spread operator');
+console.log(...points);              // spread operator
+console.log('JSON.stringify');
+console.log(JSON.stringify(points));
+
+</script>
+</body>
+</html>
