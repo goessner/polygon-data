@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1,user-scalable=no">
+<meta name="description" content="Efficient Handling of Polygon Data Using ES6 Proxy">
+<meta name="author" content="Stefan Gössner<sup>1</sup>">
+<meta name="date" content="Sun Aug 01 2021 00:00:00 GMT+0200 (Mitteleuropäische Sommerzeit)">
+<meta name="keywords" content="polygon,point array,ES6,iterator,generator,proxy,geometry">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/vs.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markdown-it-texmath/css/texmath.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/goessner/mdmath/themes/publication/style.css">
+
+<title>Efficient Handling of Polygon Data With The ES6 Proxy Object</title>
+</head>
+<body id="top">
+<header>
+<h1>Efficient Handling of Polygon Data With The ES6 Proxy Object</h1>
+<h3>Lightweight Technique for Data Conversion, Topological and Geometric Transformations.</h3>
+<h4>Stefan Gössner<sup>1</sup></h4>
+<h5><sup>1</sup>Dortmund University of Applied Sciences. Department of Mechanical Engineering</h5>
+<h5>August 2021</h5>
+<h5><b>Keywords:</b> polygon, point array, ES6, iterator, generator, proxy, geometry</h5>
+</header>
+<main>
+
+<h3 id="abstract">Abstract</h3>
+<p>There is no standard data format for polygon points used in geometry applications or JSON documents. In a real world application, you don't always have control over the data format provided by the user. A method is sought that returns points in a uniform, desired target format when accessing arrays with different data formats. Costly duplication of data is to be avoided. This paper presents an elegant method to achieve this goal using the JavaScript &quot;Proxy&quot; object. Here focusing on 2D points, this concept can be easily generalised to arrays of 3D points or other complex, homogeneous data types.</p>
+<ul>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-concepts">2. Concepts</a>
+<ul>
+<li><a href="#21-iterators">2.1 Iterators</a></li>
+<li><a href="#22-generators">2.2 Generators</a></li>
+<li><a href="#23-proxy-object">2.3 Proxy Object</a></li>
+<li><a href="#24-intermediate-results">2.4 Intermediate Results</a></li>
+<li><a href="#25-proxy-object-enhanced">2.5 Proxy Object Enhanced</a></li>
+</ul>
+</li>
+<li><a href="#3-practical-applications">3. Practical Applications</a>
+<ul>
+<li><a href="#31-transformations">3.1 Transformations</a></li>
+<li><a href="#32-concatenation">3.2 Concatenation</a></li>
+</ul>
+</li>
+<li><a href="#4-conclusion">4. Conclusion</a></li>
+</ul>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>2D points are normally described by Cartesian x- and y-coordinates. Mostly they are interpreted as polygon vertices, but this might be irrelevant here. The number of points is considered greater than one; they are usually stored in an Array.</p>
+<figure> 
+   <img src="./img/polygon-01.png">
+</figure>  
+<figcaption>Fig 1: Four Points as Polygon Data.</figcaption><br>
+<p>Different representations used in practice range from separate arrays for x- and y-coordinates to individual objects for the points.</p>
+<pre><code class="code-line language-js"><div><span class="hljs-comment">// separate arrays for x- and y-coordinates ... somewhat exotic</span>
+<span class="hljs-keyword">const</span> xCoords = [<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>];
+<span class="hljs-keyword">const</span> yCoords = [<span class="hljs-number">100</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>];
+
+<span class="hljs-comment">// flat array holding alternating x- and y-coordinates</span>
+<span class="hljs-keyword">const</span> flat = [<span class="hljs-number">100</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>];
+
+<span class="hljs-comment">// array holding point arrays</span>
+<span class="hljs-keyword">const</span> arr = [[<span class="hljs-number">100</span>,<span class="hljs-number">100</span>],[<span class="hljs-number">300</span>,<span class="hljs-number">100</span>],[<span class="hljs-number">300</span>,<span class="hljs-number">300</span>],[<span class="hljs-number">100</span>,<span class="hljs-number">300</span>]];
+
+<span class="hljs-comment">// array holding point objects</span>
+<span class="hljs-keyword">const</span> obj = [{<span class="hljs-attr">x</span>:<span class="hljs-number">100</span>,<span class="hljs-attr">y</span>:<span class="hljs-number">100</span>},{<span class="hljs-attr">x</span>:<span class="hljs-number">300</span>,<span class="hljs-attr">y</span>:<span class="hljs-number">100</span>},{<span class="hljs-attr">x</span>:<span class="hljs-number">300</span>,<span class="hljs-attr">y</span>:<span class="hljs-number">300</span>},{<span class="hljs-attr">x</span>:<span class="hljs-number">100</span>,<span class="hljs-attr">y</span>:<span class="hljs-number">300</span>}];
+</div></code></pre>
+<figcaption>Listing 1: Different representations of 2D Points.</figcaption><br>
+<p>The aim is now to have unified access to those different point formats. Point access (read only) should ...</p>
+<ol>
+<li>work the same way as used with arrays, i.e. <code>points[i]</code>.</li>
+<li>return the point in a specific target format.</li>
+<li>work with different loops provided by the language.</li>
+</ol>
+<p>Additionally <code>Array</code> methods like <code>find</code>, <code>filter</code>, etc. should work as expected.</p>
+<h2 id="2-concepts">2. Concepts</h2>
+<p>Starting with ES6, Iterators, Generators and Proxies are official JavaScript features [<a href="#1">1</a>]. We want to examine them for suitability according to the three goals from above.</p>
+<p>For this we start with two different Arrays for x- and y-coordinates and want to access points as <code>{x,y}</code> objects from them, i.e.</p>
+<pre><code class="code-line language-js"><div><span class="hljs-comment">// separate arrays for x- and y-coordinates</span>
+<span class="hljs-keyword">const</span> xCoords = [<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>];
+<span class="hljs-keyword">const</span> yCoords = [<span class="hljs-number">100</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>];
+<span class="hljs-comment">// access by something called `points`, returning `{x,y}` objects ...</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>; i&lt;points.length; i++)  <span class="hljs-comment">// traditional loop</span>
+     <span class="hljs-built_in">console</span>.log(points[i]);
+<span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> p <span class="hljs-keyword">of</span> points)                <span class="hljs-comment">// for..of loop </span>
+     <span class="hljs-built_in">console</span>.log(p);
+<span class="hljs-built_in">console</span>.log(...points);              <span class="hljs-comment">// spread operator</span>
+</div></code></pre>
+<figcaption>Listing 2: Unified Array Access Returning Point Objects.</figcaption><br>
+<p>Throughout this text we are allowed to assume for simplicity, that Arrays <code>xCoords</code> and <code>yCoords</code> are always of the same dimension.</p>
+<h3 id="21-iterators">2.1 Iterators</h3>
+<blockquote>
+<p>Iterators bring the concept of iteration directly into the core language and provide a mechanism for customizing the behavior of <code>for...of</code> loops.<br>
+– MDN [<a href="#2">2</a>]</p>
+</blockquote>
+<p>We implement both, the iterable protocol and the iterator protocol [<a href="#3">3</a>].</p>
+<pre><code class="code-line language-js"><div><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">iterator</span>(<span class="hljs-params">xarr, yarr</span>) </span>{
+    <span class="hljs-keyword">let</span> index = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">return</span> {
+        <span class="hljs-function"><span class="hljs-title">next</span>(<span class="hljs-params"></span>)</span> { 
+            <span class="hljs-keyword">return</span> index &lt; xarr.length 
+                ? { <span class="hljs-attr">value</span>: { <span class="hljs-attr">x</span>:xarr[index], <span class="hljs-attr">y</span>:yarr[index++] }, <span class="hljs-attr">done</span>: <span class="hljs-literal">false</span> }
+                : { <span class="hljs-attr">done</span>: <span class="hljs-literal">true</span> };
+        },
+        [<span class="hljs-built_in">Symbol</span>.iterator]() { <span class="hljs-keyword">return</span> <span class="hljs-built_in">this</span>; }
+    }
+}
+<span class="hljs-comment">// usage ... </span>
+<span class="hljs-keyword">const</span> points = iterator(xcoords, ycoords);
+</div></code></pre>
+<figcaption>Listing 3: Iterator object returned by function.</figcaption><br>
+<p>Variable <code>points</code> is now holding an Iterator object returned by the <code>iterator</code> function. Reusing it in the example from Listing 2 shows, that <code>for..of</code> loop as well as spread operator works as expected. Single element access is possible by <code>points.next()</code> method, but standard array element access <code>points[i]</code> and with it the traditional <code>for(;;)</code> loop is not supported.</p>
+<p>If we want to reuse <code>points</code> multiple times, we simply rewrite <code>{ done: true }</code> to <code>{ done: !(index = 0) }</code>.</p>
+<p>An Iterator is no Array, so Array methods – except static <code>Array.from()</code> function – do not work with it.</p>
+<h3 id="22-generators">2.2 Generators</h3>
+<p>Generator objects are very similar to Iterators and even somewhat more elegant. Generators conform to both the iterable protocol and the iterator protocol. They cannot be instantiated directly, instead they are returned from a generator function [<a href="#4">4</a>].</p>
+<pre><code class="code-line language-js"><div><span class="hljs-function"><span class="hljs-keyword">function</span>* <span class="hljs-title">generator</span>(<span class="hljs-params">xarr, yarr</span>) </span>{
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>; i&lt;xarr.length; i++)
+        <span class="hljs-keyword">yield</span> {<span class="hljs-attr">x</span>: xarr[i], <span class="hljs-attr">y</span>: yarr[i]};
+}
+<span class="hljs-comment">// usage ... </span>
+<span class="hljs-keyword">const</span> points = generator(xcoords, ycoords);
+</div></code></pre>
+<figcaption>Listing 4: Generator object implicitly returned by function.</figcaption><br>
+<p>Variable <code>points</code> from Listing 4  holds a Generator object implicitly returned by the <code>generator</code> function. Reusing it in Listing 2 example shows behavior identical to Iterators. Only <code>for..of</code> loop and spread operator work as expected.</p>
+<p>Please note, that generators cannot be reset to initial state. We need to call <code>generator(xcoords, ycoords)</code> each time.</p>
+<h3 id="23-proxy-object">2.3 Proxy Object</h3>
+<p>The <code>Proxy</code> object enables us to create a proxy for another object, which can intercept and redefine fundamental operations for that object. We create a <code>Proxy</code> object with <code>new Proxy(target, handler)</code>. Herein <code>target</code> is the original object and <code>handler</code> an object with a predefined – not extensible – interface [<a href="#5">5</a>].</p>
+<p>In our context we don't have a single object (array) to create a proxy for, but two. So it reads:</p>
+<pre><code class="code-line language-js"><div><span class="hljs-keyword">const</span> proxy = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">xarr, yarr</span>) </span>{
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Proxy</span>([], {
+        <span class="hljs-attr">get</span>: <span class="hljs-function">(<span class="hljs-params">pts, key</span>) =&gt;</span> {
+            <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key))
+                <span class="hljs-keyword">return</span> {<span class="hljs-attr">x</span>:xarr[+key],<span class="hljs-attr">y</span>:yarr[+key]}
+            <span class="hljs-keyword">else</span>
+                <span class="hljs-keyword">return</span> xarr[key];
+        }
+    });
+}
+<span class="hljs-comment">// usage ... </span>
+<span class="hljs-keyword">const</span> points = proxy(xcoords, ycoords);
+</div></code></pre>
+<figcaption>Listing 5: Proxy object returned by function.</figcaption><br>
+<p>Variable <code>points</code> is now holding a Proxy object returned by the <code>proxy</code> function. Reusing it in the example from Listing 2 shows, that usual array access <code>points[i]</code>, dimension property <code>length</code> and with it the traditional <code>for(;;)</code> loop works as expected. <code>Array</code> methods are also supported – at least the non-modifyable ones get correct results due to read-only access of the proxy.</p>
+<p>On the other hand <code>Proxy</code> object does not support the iteration protocols, so <code>for..of</code> loop and spread operator is not working. Applying <code>console.log(...points)</code> results in <code>&quot;TypeError: can't convert symbol to number&quot;</code>.</p>
+<h3 id="24-intermediate-results">2.4 Intermediate Results</h3>
+<p>Applying the <code>Proxy</code> object to 2D point data provides promising results and is clearly superior to <code>Iterator</code> and <code>Generator</code> objects. It behaves as if it were an array itself.</p>
+<figcaption>Table 1: Comparison of Iterator, Generator and Proxy object behavior.</figcaption>
+<p><br><br></p>
+<table>
+<thead>
+<tr>
+<th>Apply</th>
+<th style="text-align:center">Iterator</th>
+<th style="text-align:center">Generator</th>
+<th style="text-align:center">Proxy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>arr[i]</code></td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">✓</td>
+</tr>
+<tr>
+<td><code>arr.length</code></td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">✓</td>
+</tr>
+<tr>
+<td><code>for(;;)</code></td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">✓</td>
+</tr>
+<tr>
+<td><code>Array.isArray</code></td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">✓</td>
+</tr>
+<tr>
+<td><code>for..of</code></td>
+<td style="text-align:center">✓</td>
+<td style="text-align:center">✓</td>
+<td style="text-align:center">–</td>
+</tr>
+<tr>
+<td><code>Array.from</code></td>
+<td style="text-align:center">✓</td>
+<td style="text-align:center">✓</td>
+<td style="text-align:center">–</td>
+</tr>
+<tr>
+<td><code>JSON.stringify</code></td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">–</td>
+<td style="text-align:center">✓</td>
+</tr>
+</tbody>
+</table>
+<p>The only missing thing is lack of support of the iteration protocols.</p>
+<h3 id="25-proxy-object-enhanced">2.5 Proxy Object Enhanced</h3>
+<p>The <code>Proxy</code> object does not support the iterable protocol and the iterator protocol natively. Let us try to implement them to make the example in Listing 2 work as a whole.</p>
+<pre><code class="code-line language-js"><div><span class="hljs-keyword">const</span> proxy = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">xarr, yarr</span>) </span>{
+    <span class="hljs-keyword">const</span> points = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Array</span>(~~xarr.length);
+    points[<span class="hljs-built_in">Symbol</span>.iterator] = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params"></span>) </span>{
+        <span class="hljs-keyword">let</span> index = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">return</span> {
+            <span class="hljs-function"><span class="hljs-title">next</span>(<span class="hljs-params"></span>)</span> { 
+                <span class="hljs-keyword">return</span> index &lt; xarr.length 
+                    ? { <span class="hljs-attr">value</span>: { <span class="hljs-attr">x</span>:xarr[index], <span class="hljs-attr">y</span>:yarr[index++] }, 
+                        <span class="hljs-attr">done</span>: <span class="hljs-literal">false</span> }
+                    : { <span class="hljs-attr">done</span>: <span class="hljs-literal">true</span> };
+            }
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Proxy</span>(points, {
+        <span class="hljs-attr">get</span>: <span class="hljs-function">(<span class="hljs-params">pts, key</span>) =&gt;</span> {
+            <span class="hljs-keyword">if</span> (key === <span class="hljs-built_in">Symbol</span>.iterator)
+                <span class="hljs-keyword">return</span> points[<span class="hljs-built_in">Symbol</span>.iterator].bind(points);
+            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key))
+                <span class="hljs-keyword">return</span> {<span class="hljs-attr">x</span>:xarr[key],<span class="hljs-attr">y</span>:yarr[key]};
+            <span class="hljs-keyword">else</span>
+                <span class="hljs-keyword">return</span> xarr[key];
+        }
+    });
+}
+</div></code></pre>
+<figcaption>Listing 6: Proxy object implementing iteration protocols.</figcaption><br>
+<p>In our <code>proxy</code> wrapper function in Listing 6 we add a helper array <code>points</code> with correct <code>length</code> property and implement a custom <code>[Symbol.iterator]</code> method on it. In the <code>Proxy</code>'s <code>get</code> method the <code>Symbol.iterator</code> key is handled explicitly then.</p>
+<p>Please note, that on line 2 of Listing 6 in <code>new Array(~~xarr.length)</code> the double <code>~~</code> operator efficiently works like <code>Math.floor</code> and the <code>Array</code> constructor only reserves empty slots and should not allocate memory [<a href="#6">6</a>].</p>
+<p>These additions are sufficient to enable our <code>points</code> object from Listing 2 to deal with <code>for..of</code> loops and spread operator correctly.</p>
+<p>It is perfectly mimicking an array now – restricted to read access only though. So <code>points.find((p)=&gt;Math.hypot(p.x,p.y) &gt; 400)</code> correctly yields the point <code>{x:300,y:300}</code>.</p>
+<p>Modifying the array doesn't work, as our proxy handler does not implement the <code>set</code> method. In fact, we do not want that either, as it is considered bad practice. Modifications should be made transparently to the original array.</p>
+<h2 id="3-practical-applications">3. Practical Applications</h2>
+<p>First we want to move to a more realistic polygon structure contained in a single array. This requires a modification of our proxy implementation.</p>
+<pre><code class="code-line language-js"><div><span class="hljs-keyword">const</span> polygon = [<span class="hljs-number">100</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>,<span class="hljs-number">300</span>,<span class="hljs-number">100</span>,<span class="hljs-number">300</span>]; <span class="hljs-comment">// flat coordinates array</span>
+
+<span class="hljs-keyword">const</span> proxy = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">poly</span>) </span>{
+    <span class="hljs-keyword">const</span> pnts = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Array</span>(~~(poly.length/<span class="hljs-number">2</span>));
+    pnts[<span class="hljs-built_in">Symbol</span>.iterator] = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params"></span>) </span>{
+        ...
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Proxy</span>(poly, {
+        <span class="hljs-attr">get</span>: <span class="hljs-function">(<span class="hljs-params">pts, key</span>) =&gt;</span> {
+            <span class="hljs-keyword">if</span> (key === <span class="hljs-built_in">Symbol</span>.iterator)
+                <span class="hljs-keyword">return</span> pnts[<span class="hljs-built_in">Symbol</span>.iterator].bind(pnts);
+            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key))
+                <span class="hljs-keyword">return</span> {<span class="hljs-attr">x</span>:pts[key*<span class="hljs-number">2</span>],<span class="hljs-attr">y</span>:pts[key*<span class="hljs-number">2</span>+<span class="hljs-number">1</span>]};
+            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (key === <span class="hljs-string">&#x27;length&#x27;</span>)
+                <span class="hljs-keyword">return</span>  ~~(pts.length/<span class="hljs-number">2</span>);
+            <span class="hljs-keyword">else</span>
+                <span class="hljs-keyword">return</span> pts[key];
+        }
+    });
+}
+
+<span class="hljs-keyword">const</span> points = proxy(polygon);
+<span class="hljs-comment">// [{&quot;x&quot;:100,&quot;y&quot;:100},{&quot;x&quot;:300,&quot;y&quot;:100},{&quot;x&quot;:300,&quot;y&quot;:300},{&quot;x&quot;:100,&quot;y&quot;:300}]</span>
+</div></code></pre>
+<figcaption>Listing 7: Proxy object for a flat points array.</figcaption><br>
+<p>Analogously to this we can adapt the implementation in Listing 7 for an array holding point arrays as well. An array containing point objects <code>{x,y}</code> needs no proxy at all, as it already contains points in our target format.</p>
+<h3 id="31-transformations">3.1 Transformations</h3>
+<p>Our <code>proxy</code>'s can not only handle various user-side polygon data formats, but also manage more advanced transformations. Mostly only the change of one line in Listing 7 is necessary.</p>
+<pre><code class="code-line language-js"><div><span class="hljs-comment">// Reverse points ...</span>
+      ...
+      <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key)) {
+         <span class="hljs-keyword">const</span> i = pts.length - <span class="hljs-number">1</span> - key;
+         <span class="hljs-keyword">return</span> {<span class="hljs-attr">x</span>:pts[i].x, <span class="hljs-attr">y</span>:pts[i].y};
+      }
+      ...
+
+<span class="hljs-comment">// Polar coordinates ...</span>
+      ...
+      <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key)) {
+         <span class="hljs-keyword">const</span> p = pts[+key];
+         <span class="hljs-keyword">return</span> {<span class="hljs-attr">r</span>:<span class="hljs-built_in">Math</span>.hypot(p.x,p.y), <span class="hljs-attr">w</span>:<span class="hljs-built_in">Math</span>.atan2(p.y,p.x)};
+      }
+      ...
+
+<span class="hljs-comment">// Rotate polygon points about `x0,y0` by angle `w` in radians ...</span>
+<span class="hljs-keyword">const</span> rotPoly = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">poly,w,x0=<span class="hljs-number">0</span>,y0=<span class="hljs-number">0</span></span>) </span>{
+    ...
+    <span class="hljs-keyword">const</span> sw = <span class="hljs-built_in">Math</span>.sin(w), cw = <span class="hljs-built_in">Math</span>.cos(w);
+    <span class="hljs-keyword">const</span> x = (<span class="hljs-number">1</span>-cw)*x0 + sw*y0, y = -sw*x0 + (<span class="hljs-number">1</span>-cw)*y0;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Proxy</span>(poly, {
+        <span class="hljs-attr">get</span>: <span class="hljs-function">(<span class="hljs-params">pts, key</span>) =&gt;</span> {
+            ...
+            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">isNaN</span>(+key)) {
+                <span class="hljs-keyword">const</span> p = pts[i];
+                <span class="hljs-keyword">return</span> {<span class="hljs-attr">x</span>: p.x*cw - p.y*sw + x, <span class="hljs-attr">y</span>: p.x*sw + p.y*cw + y};
+            }
+            ...
+</div></code></pre>
+<p>The charming fact with this approach is, that there is no mutation or copying of geometry data necessary. So the reverse proxy might be even a better solution than applying native <code>Array.reverse</code> method, since the latter transposes array elements in place.</p>
+<h3 id="32-concatenation">3.2 Concatenation</h3>
+<p>Another good thing is the possibility of serial combination of transformations. Let</p>
+<ul>
+<li><code>flat</code> be the proxy handling a flat points array,</li>
+<li><code>rev</code> be the proxy delivering points in reverse order,</li>
+<li><code>rot</code> be the rotation of points by angle <code>w</code> about center <code>x0,y0</code>,</li>
+</ul>
+<p>then</p>
+<pre><code class="code-line language-js"><div>rot(rev(flat(poly)),w,x0,y0);
+</div></code></pre>
+<p>will deliver rotated polygon points in reversed order and in object format <code>{x,y}</code> from its original flat coordinates array in a time and memory efficient way.</p>
+<h2 id="4-conclusion">4. Conclusion</h2>
+<p>Users polygon data format cannot always be controlled by the application. So different approaches for transforming points to a unified target format in a memory and time efficient way is discussed in this paper.</p>
+<p>The comparison of ES6 Iterator, Generator and Proxy object shows the clear superiority of <code>Proxy</code> for this task. After equipping the <code>Proxy</code> object with the iterable protocol and the iterator protocol, it behaves identically to a JavaScript <code>Array</code>.</p>
+<p>The lightweight and easy to implement <code>Proxy</code> technique described is not only useful for data conversion, but also for topological (point order) and geometric (rotate, scale, translate) transformations.</p>
+<p>The source code to Listing 2...6 can be found on GitHub [<a href="#7">7</a>]. The HTML page to this paper is generated by Markdown+Math, which is documented [<a href="#8">8</a>] and available on GitHub [<a href="#9">9</a>].</p>
+<h3 id="references">References</h3>
+<p><span id='1'>[1] ECMA-262 6th Edition (<a href="https://262.ecma-international.org/6.0/">https://262.ecma-international.org/6.0/</a>)<br>
+<span id='2'>[2] MDN - Iterators and generators (<a href="http://tinyurl.com/2d3v9sbr">tinyurl.com/2d3v9sbr</a>)<br>
+<span id='3'>[3] MDN - Iteration protocols (<a href="https://tinyurl.com/2a54tedb">https://tinyurl.com/2a54tedb</a>)<br>
+<span id='4'>[4] MDN - Generator (<a href="https://tinyurl.com/e8xyz2vy">https://tinyurl.com/e8xyz2vy</a>)<br>
+<span id='5'>[5] MDN - Proxy (<a href="https://tinyurl.com/3ywxevcy">https://tinyurl.com/3ywxevcy</a>)<br>
+<span id='6'>[6] MDN - Array constructor (<a href="https://tinyurl.com/4scaba6e">https://tinyurl.com/4scaba6e</a>)<br>
+<span id='7'>[7]<br>
+<span id='8'>[8] Markdown+Math (<a href="https://goessner.github.io/mdmath/">https://goessner.github.io/mdmath/</a>)<br>
+<span id='9'>[9] mdmath (<a href="https://github.com/goessner/mdmath">https://github.com/goessner/mdmath</a>)</p>
+
+</main>
+</body>
+</html>
