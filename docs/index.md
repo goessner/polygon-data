@@ -158,9 +158,9 @@ On the other hand `Proxy` object does not support the iteration protocols, so `f
 
 Applying the `Proxy` object to 2D point data provides promising results and is clearly superior to `Iterator` and `Generator` objects. It behaves as if it were an array itself.
 
-<figcaption>Table 1: Comparison of Iterator, Generator and Proxy object behavior.</figcaption>
+<br><br><br>
 
-<br><br>
+<figcaption>Table 1: Comparison of Iterator, Generator and Proxy object behavior.</figcaption>
 
 | Apply | Iterator | Generator | Proxy |
 |---|:--:|:--:|:--:|
